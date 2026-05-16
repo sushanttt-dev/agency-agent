@@ -11,6 +11,16 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed",
 )
+# ── Google Analytics ──────────────────────────────────────────────────────────
+st.markdown("""
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-W05VG9B4CH"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-W05VG9B4CH');
+    </script>
+""", unsafe_allow_html=True)
 
 load_dotenv()
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
