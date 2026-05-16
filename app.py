@@ -11,6 +11,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed",
 )
+
 # ── Google Analytics ──────────────────────────────────────────────────────────
 st.markdown("""
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-W05VG9B4CH"></script>
@@ -23,14 +24,26 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 load_dotenv()
+
+# ── FIX #1: API key guard — fail fast with a friendly message ─────────────────
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+if not GROQ_API_KEY:
+    st.error("⚠️ API key not configured. Please contact the administrator.")
+    st.stop()
+
 client = Groq(api_key=GROQ_API_KEY)
 
+# ── Constants ─────────────────────────────────────────────────────────────────
+MAX_CHARS       = 300   # max input length per field
+SESSION_LIMIT   = 10    # max generations per session
+
 # ── Session state ─────────────────────────────────────────────────────────────
-if "pitch_history" not in st.session_state:
-    st.session_state.pitch_history = []
-if "last_output" not in st.session_state:
-    st.session_state.last_output = None
+if "pitch_history"   not in st.session_state:
+    st.session_state.pitch_history   = []
+if "last_output"     not in st.session_state:
+    st.session_state.last_output     = None
+if "request_count"   not in st.session_state:
+    st.session_state.request_count   = 0
 
 # ── Luxury CSS ────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -201,6 +214,32 @@ html, body, .stApp {
   flex: 1;
   height: 1px;
   background: var(--border);
+}
+
+/* ── Rate limit bar ── */
+.rate-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.rate-bar-track {
+  flex: 1;
+  height: 4px;
+  background: rgba(201,168,76,0.1);
+  border-radius: 100px;
+  overflow: hidden;
+}
+.rate-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #c9a84c, #e8c96a);
+  border-radius: 100px;
+  transition: width 0.3s ease;
+}
+.rate-label {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  white-space: nowrap;
 }
 
 /* ── Inputs ── */
@@ -472,14 +511,29 @@ col_form, col_hist = st.columns([1.65, 1], gap="large")
 with col_form:
     st.markdown('<div class="section-label">✦ &nbsp; Craft Your Pitch</div>', unsafe_allow_html=True)
 
+    # ── FIX #2: Rate limit progress bar ───────────────────────────────────────
+    remaining   = SESSION_LIMIT - st.session_state.request_count
+    pct         = int((st.session_state.request_count / SESSION_LIMIT) * 100)
+    bar_color   = "#e8c96a" if remaining > 3 else "#e05252"
+    st.markdown(f"""
+    <div class="rate-bar-wrap">
+      <div class="rate-bar-track">
+        <div class="rate-bar-fill" style="width:{pct}%; background:{bar_color};"></div>
+      </div>
+      <span class="rate-label">{remaining} of {SESSION_LIMIT} pitches remaining</span>
+    </div>
+    """, unsafe_allow_html=True)
+
     service_offered = st.text_input(
         "Service You're Offering",
         placeholder="e.g., Brand Identity Design, 4K Drone Videography, SEO Copywriting",
+        max_chars=MAX_CHARS,
     )
 
     target_client = st.text_input(
         "Your Target Client",
         placeholder="e.g., Luxury Real Estate Agencies in Mumbai",
+        max_chars=MAX_CHARS,
     )
 
     col_type, col_tone = st.columns(2)
@@ -489,7 +543,15 @@ with col_form:
         tone = st.selectbox("Tone", list(TONES.keys()))
 
     st.markdown("<br>", unsafe_allow_html=True)
-    generate_clicked = st.button("✦  Generate Pitch Copy")
+
+    # ── FIX #3: Disable button when session limit is reached ──────────────────
+    limit_hit      = st.session_state.request_count >= SESSION_LIMIT
+    generate_clicked = st.button(
+        "✦  Generate Pitch Copy",
+        disabled=limit_hit,
+    )
+    if limit_hit:
+        st.warning("You've reached the session limit of 10 pitches. Refresh the page to start a new session.")
 
     # ── Generate logic ────────────────────────────────────────────────────────
     if generate_clicked:
@@ -497,70 +559,85 @@ with col_form:
             st.warning("Please fill in your service and target client before generating.")
         else:
             with st.spinner("Crafting premium copy…"):
-                system_prompt = (
-                    "You are an elite freelance copywriter specialising in premium personal branding "
-                    "and business development for creative and digital service professionals.\n"
-                    f"Tone directive: {TONES[tone]}\n"
-                    "Your copy must be specific, persuasive, and ready to use — never generic filler. "
-                    "Obsess over the concrete value the client receives, not just the features of the service. "
-                    "Every sentence must earn its place."
-                )
 
-                content_type_extras = {
-                    "Cold Email": "Include: compelling subject line, strong opening hook, concise body, clear CTA, professional sign-off.",
-                    "Professional Bio": "Include: third-person voice, opening headline, expertise, credibility markers, unique value prop, closing statement.",
-                    "Instagram Carousel Script": "Include: slide 1 hook, 5–7 body slides with punchy single insights, CTA slide. Format: 'Slide N: [text]'.",
-                    "LinkedIn Post": "Include: scroll-stopping first line, value-packed body (no walls of text), strategic line breaks, CTA and 3–5 hashtags.",
-                    "Client Proposal / Quote Letter": "Include: project understanding, proposed approach, deliverables list, timeline, pricing section placeholder, next steps.",
-                    "Elevator Pitch Script": "Include: 60-second spoken script, hook, who you help, what you do, the result you deliver, memorable close.",
-                    "Testimonial Request Email": "Include: warm personal opening, specific project reference, clear ask, two guiding questions to make it easy, grateful close.",
-                }
+                # ── FIX #4: try/except around the entire API call ─────────────
+                try:
+                    system_prompt = (
+                        "You are an elite freelance copywriter specialising in premium personal branding "
+                        "and business development for creative and digital service professionals.\n"
+                        f"Tone directive: {TONES[tone]}\n"
+                        "Your copy must be specific, persuasive, and ready to use — never generic filler. "
+                        "Obsess over the concrete value the client receives, not just the features of the service. "
+                        "Every sentence must earn its place."
+                    )
 
-                user_prompt = (
-                    f"Write a {task_type} for a freelancer offering \"{service_offered}\" "
-                    f"to \"{target_client}\".\n\n"
-                    f"Requirements: {content_type_extras.get(task_type, '')}\n"
-                    "Make it compelling and completely ready to send, post, or deliver."
-                )
+                    content_type_extras = {
+                        "Cold Email":                  "Include: compelling subject line, strong opening hook, concise body, clear CTA, professional sign-off.",
+                        "Professional Bio":            "Include: third-person voice, opening headline, expertise, credibility markers, unique value prop, closing statement.",
+                        "Instagram Carousel Script":   "Include: slide 1 hook, 5–7 body slides with punchy single insights, CTA slide. Format: 'Slide N: [text]'.",
+                        "LinkedIn Post":               "Include: scroll-stopping first line, value-packed body (no walls of text), strategic line breaks, CTA and 3–5 hashtags.",
+                        "Client Proposal / Quote Letter": "Include: project understanding, proposed approach, deliverables list, timeline, pricing section placeholder, next steps.",
+                        "Elevator Pitch Script":       "Include: 60-second spoken script, hook, who you help, what you do, the result you deliver, memorable close.",
+                        "Testimonial Request Email":   "Include: warm personal opening, specific project reference, clear ask, two guiding questions to make it easy, grateful close.",
+                    }
 
-                completion = client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user",   "content": user_prompt},
-                    ],
-                    temperature=0.75,
-                )
+                    user_prompt = (
+                        f"Write a {task_type} for a freelancer offering \"{service_offered}\" "
+                        f"to \"{target_client}\".\n\n"
+                        f"Requirements: {content_type_extras.get(task_type, '')}\n"
+                        "Make it compelling and completely ready to send, post, or deliver."
+                    )
 
-                generated = completion.choices[0].message.content
-                word_count = len(generated.split())
-                read_time  = max(1, round(word_count / 200))
+                    completion = client.chat.completions.create(
+                        model="llama-3.3-70b-versatile",
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user",   "content": user_prompt},
+                        ],
+                        temperature=0.75,
+                    )
 
-                # Save to history
-                st.session_state.pitch_history.append({
-                    "type":    task_type,
-                    "service": service_offered,
-                    "client":  target_client,
-                    "tone":    tone,
-                    "content": generated,
-                    "words":   word_count,
-                })
-                st.session_state.last_output = {
-                    "type":    task_type,
-                    "words":   word_count,
-                    "read":    read_time,
-                    "content": generated,
-                }
+                    generated  = completion.choices[0].message.content
+                    word_count = len(generated.split())
+                    read_time  = max(1, round(word_count / 200))
+
+                    # Save to history and update counter
+                    st.session_state.pitch_history.append({
+                        "type":    task_type,
+                        "service": service_offered,
+                        "client":  target_client,
+                        "tone":    tone,
+                        "content": generated,
+                        "words":   word_count,
+                    })
+                    st.session_state.last_output = {
+                        "type":    task_type,
+                        "words":   word_count,
+                        "read":    read_time,
+                        "content": generated,
+                    }
+                    st.session_state.request_count += 1
+                    st.rerun()
+
+                # ── FIX #4 cont: Catch API errors gracefully ──────────────────
+                except Exception as e:
+                    err = str(e)
+                    if "rate_limit" in err.lower():
+                        st.error("⏱ Rate limit reached. Please wait a moment and try again.")
+                    elif "auth" in err.lower() or "api_key" in err.lower():
+                        st.error("🔑 API key error. Please contact the administrator.")
+                    else:
+                        st.error("Something went wrong while generating your copy. Please try again.")
 
     # ── Display last output ───────────────────────────────────────────────────
     if st.session_state.last_output:
-        out = st.session_state.last_output
+        out       = st.session_state.last_output
         safe_text = html.escape(out["content"])
 
         st.markdown(f"""
         <div class="result-wrap">
           <div class="result-header">
-            <div class="result-title">✦ {out['type']}</div>
+            <div class="result-title">✦ {html.escape(out['type'])}</div>
             <div class="result-pills">
               <span class="result-pill">📝 {out['words']} words</span>
               <span class="result-pill">⏱ {out['read']} min read</span>
@@ -598,7 +675,7 @@ with col_hist:
                   <span style="font-size:0.82rem;color:#ccc;">{html.escape(item['client'])}</span>
                   <span style="font-size:0.7rem;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.2);
                         border-radius:100px;padding:0.15rem 0.6rem;color:var(--gold);">
-                    {item['tone']}
+                    {html.escape(item['tone'])}
                   </span>
                   <span style="font-size:0.72rem;color:var(--text-dim);">{item['words']} words</span>
                 </div>
@@ -607,10 +684,11 @@ with col_hist:
                 </div>
                 """, unsafe_allow_html=True)
 
-                real_idx = len(st.session_state.pitch_history) - 1 - i
                 with st.expander("   Show full text"):
                     st.code(item["content"], language=None)
-                    # ── Footer ───────────────────────────────────────────────────────────────────
+
+
+# ── FIX #5: Footer moved OUTSIDE col_hist and the history loop ────────────────
 st.markdown("""
 <div style="
     text-align: center;
