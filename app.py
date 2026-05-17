@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import os
 import html
 from groq import Groq
@@ -12,16 +13,20 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# ── Google Analytics ──────────────────────────────────────────────────────────
-st.markdown("""
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-W05VG9B4CH"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-      gtag('config', 'G-W05VG9B4CH');
-    </script>
-""", unsafe_allow_html=True)
+# ── Google Analytics (FIXED FOR STREAMLIT) ───────────────────────────────────
+ga_script = """
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-W05VG9B4CH"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-W05VG9B4CH');
+</script>
+"""
+# components.html safely injects the JS into the Streamlit frontend
+components.html(ga_script, height=0, width=0)
 
 load_dotenv()
 
