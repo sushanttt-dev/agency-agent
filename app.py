@@ -13,21 +13,31 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# ── Google Analytics (FIXED FOR STREAMLIT) ───────────────────────────────────
+# ── Google Analytics (FIXED FOR STREAMLIT PARENT WINDOW) ─────────────────────
 ga_script = """
-<!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-W05VG9B4CH"></script>
 <script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
+    // Only inject if it hasn't been injected yet
+    if (!window.parent.document.getElementById('ga-script')) {
+        // 1. Inject the external Google Tag script into the main window
+        var gtagScript = window.parent.document.createElement('script');
+        gtagScript.id = 'ga-script';
+        gtagScript.async = true;
+        gtagScript.src = 'https://www.googletagmanager.com/gtag/js?id=G-W05VG9B4CH';
+        window.parent.document.head.appendChild(gtagScript);
 
-  gtag('config', 'G-W05VG9B4CH');
+        // 2. Inject the configuration script into the main window
+        var configScript = window.parent.document.createElement('script');
+        configScript.innerHTML = `
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config', 'G-W05VG9B4CH');
+        `;
+        window.parent.document.head.appendChild(configScript);
+    }
 </script>
 """
-# components.html safely injects the JS into the Streamlit frontend
 components.html(ga_script, height=0, width=0)
-
 load_dotenv()
 
 # ── FIX #1: API key guard — fail fast with a friendly message ─────────────────
