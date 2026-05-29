@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 # ── Config (must be first Streamlit call) ────────────────────────────────────
 st.set_page_config(
-    page_title="Pitch Engine — AI Copy Studio",
+    page_title="Copystudio-AI",
     page_icon="💼",
     layout="wide",
     initial_sidebar_state="collapsed",
