@@ -33,7 +33,8 @@ No more staring at a blank screen before sending a cold email or writing your bi
 
 👉 **[copystudioai.streamlit.app](https://copystudioai.streamlit.app/)**
 
-![Copy Studio AI Screenshot](https://via.placeholder.com/900x500/080810/c9a84c?text=Copy+Studio+AI+—+Screenshot+coming+soon)
+![Copy Studio AI Screenshot](<img width="1178" height="730" alt="image" src="https://github.com/user-attachments/assets/9bdbc476-e30f-47e7-a2e5-f059e0366dbe" />
+)
 
 ---
 
